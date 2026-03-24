@@ -33,10 +33,10 @@
   "homepage": "https://uplo.ai/sidecar",
   "repository": {
     "type": "git",
-    "url": "https://github.com/uplo-ai/sidecar"
+    "url": "https://github.com/RooJenkins/sidecar"
   },
   "bugs": {
-    "url": "https://github.com/uplo-ai/sidecar/issues"
+    "url": "https://github.com/RooJenkins/sidecar/issues"
   },
   "author": "UPLO <hello@uplo.ai> (https://uplo.ai)",
   "license": "MIT",
