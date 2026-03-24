@@ -1,0 +1,7 @@
+{
+  "name": "com.sidecar.menu",
+  "description": "Sidecar context injection for AI chat platforms",
+  "path": "PLACEHOLDER_SET_BY_INSTALL_SCRIPT",
+  "type": "stdio",
+  "allowed_origins": []
+}

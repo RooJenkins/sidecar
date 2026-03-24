@@ -1,0 +1,74 @@
+{
+  "name": "uplo-sidecar",
+  "version": "0.1.0",
+  "description": "Make your documents AI-ready. Scans folders, extracts structured data, generates .sidecar.md companion files. Privacy-first — nothing leaves your machine.",
+  "type": "module",
+  "bin": {
+    "sidecar": "dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "!dist/__tests__",
+    ".sidecarrc.example"
+  ],
+  "keywords": [
+    "sidecar",
+    "ai",
+    "documents",
+    "extraction",
+    "pdf",
+    "docx",
+    "xlsx",
+    "markdown",
+    "cli",
+    "rag",
+    "search",
+    "knowledge-base",
+    "ai-ready",
+    "local-first",
+    "privacy"
+  ],
+  "homepage": "https://uplo.ai/sidecar",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/uplo-ai/sidecar"
+  },
+  "bugs": {
+    "url": "https://github.com/uplo-ai/sidecar/issues"
+  },
+  "author": "UPLO <hello@uplo.ai> (https://uplo.ai)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build:binary": "npm run build && npx @yao-pkg/pkg dist/cli.js --targets node20-macos-arm64 --output desktop/src-tauri/binaries/sidecar-aarch64-apple-darwin",
+    "desktop:dev": "cd desktop && npx tauri dev",
+    "desktop:build": "npm run build:binary && cd desktop && npx tauri build",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "chokidar": "^4.0.0",
+    "commander": "^12.0.0",
+    "glob": "^11.0.0",
+    "mammoth": "^1.8.0",
+    "ora": "^8.0.0",
+    "pdf-parse": "^1.1.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "yaml": "^2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/pdf-parse": "^1.1.4",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.0"
+  }
+}

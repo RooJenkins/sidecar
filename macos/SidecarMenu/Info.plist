@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.sidecar.menu</string>
+    <key>CFBundleName</key>
+    <string>Sidecar Menu</string>
+    <key>CFBundleDisplayName</key>
+    <string>Sidecar Menu</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleExecutable</key>
+    <string>SidecarMenu</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 Sidecar. All rights reserved.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Sidecar Menu needs accessibility access to inject context into text fields.</string>
+    <key>NSPasteboardUsageDescription</key>
+    <string>Sidecar Menu reads and writes clipboard contents to inject context into your text.</string>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>Sidecar Menu uses accessibility to detect focused text fields and inject context.</string>
+</dict>
+</plist>

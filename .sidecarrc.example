@@ -1,0 +1,11 @@
+{
+  "include": ["**/*.pdf", "**/*.docx", "**/*.xlsx", "**/*.md", "**/*.txt"],
+  "exclude": ["node_modules", ".git", "dist"],
+  "maxFileSize": "100MB",
+  "outputDir": "",
+  "summarize": false,
+  "provider": "claude",
+  "model": "claude-sonnet-4-5-20250929",
+  "concurrency": 4,
+  "tikaUrl": "http://localhost:9998"
+}

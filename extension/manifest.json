@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "Sidecar Context Injection",
+  "version": "0.1.0",
+  "description": "Inject sidecar document context into AI chat conversations",
+  "permissions": [
+    "nativeMessaging",
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://claude.ai/*",
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://gemini.google.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "commands": {
+    "inject-context": {
+      "suggested_key": {
+        "default": "Ctrl+J",
+        "mac": "Command+J"
+      },
+      "description": "Search sidecar and inject context"
+    }
+  },
+  "host_permissions": [
+    "https://*/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

@@ -1,0 +1,19 @@
+node_modules/
+dist/
+*.sidecar.md
+SIDECAR.md
+.sidecar/
+.DS_Store
+.env
+
+# Desktop app
+desktop/src-tauri/target/
+desktop/src-tauri/binaries/sidecar-*
+desktop/node_modules/
+desktop/dist/
+
+# macOS app build artifacts
+macos/SidecarMenu/.build/
+
+# CLI duplicate (legacy)
+cli/
