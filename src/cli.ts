@@ -562,6 +562,16 @@ program
     }
   });
 
+// ── mcp command ──────────────────────────────────────────────────────────
+
+program
+  .command("mcp")
+  .description("Start MCP server (Model Context Protocol) for AI assistant integration")
+  .action(async () => {
+    const { startMcpServer } = await import("./mcp.js");
+    await startMcpServer();
+  });
+
 program.parse();
 
 // ── watch mode ────────────────────────────────────────────────────────────

@@ -171,6 +171,44 @@ Browser extension for injecting document context into AI chat conversations.
 - Extracts full conversation history from the page DOM
 - Injects relevant document context automatically
 
+## MCP Server
+
+Use sidecar as an MCP server with Claude Desktop, Claude Code, Cursor, or any MCP-compatible client.
+
+```bash
+# Start the MCP server
+sidecar mcp
+```
+
+### Claude Code
+
+```bash
+claude mcp add sidecar -- sidecar mcp
+```
+
+### Claude Desktop / Cursor
+
+Add to your config:
+
+```json
+{
+  "mcpServers": {
+    "sidecar": {
+      "command": "sidecar-mcp"
+    }
+  }
+}
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `sidecar_search` | BM25 keyword search across your indexed documents |
+| `sidecar_smart_search` | AI-powered contextual search with relevance filtering |
+| `sidecar_read` | Read the full contents of a .sidecar.md file |
+| `sidecar_status` | Check sidecar status for a directory |
+
 ## Configuration (`.sidecarrc`)
 
 Create a `.sidecarrc` file in your project root:
