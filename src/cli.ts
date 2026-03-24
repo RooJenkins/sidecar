@@ -572,6 +572,53 @@ program
     await startMcpServer();
   });
 
+// ── license commands ─────────────────────────────────────────────────────
+
+program
+  .command("activate")
+  .description("Activate a Sidecar Pro license key")
+  .argument("<key>", "License key")
+  .action(async (key: string) => {
+    const { activateLicense } = await import("./license.js");
+    const status = await activateLicense(key);
+    if (status.valid) {
+      console.log(chalk.green("License activated!"));
+      console.log(`  Email: ${status.payload!.email}`);
+      console.log(`  Plan:  ${status.payload!.plan}`);
+      console.log(`  Expires: ${status.payload!.expiresAt}`);
+    } else {
+      console.error(chalk.red(`Activation failed: ${status.error}`));
+      process.exit(1);
+    }
+  });
+
+program
+  .command("license")
+  .description("Show current license status")
+  .action(async () => {
+    const { checkLicense } = await import("./license.js");
+    const status = await checkLicense();
+    if (status.valid) {
+      console.log(chalk.green("Pro license active"));
+      console.log(`  Email: ${status.payload!.email}`);
+      console.log(`  Plan:  ${status.payload!.plan}`);
+      console.log(`  Expires: ${status.payload!.expiresAt}`);
+    } else {
+      console.log(chalk.dim("No active license"));
+      console.log(chalk.dim(`  ${status.error}`));
+      console.log(chalk.dim("  Get a license at https://uplo.ai/sidecar"));
+    }
+  });
+
+program
+  .command("deactivate")
+  .description("Remove the current license key")
+  .action(async () => {
+    const { deactivateLicense } = await import("./license.js");
+    await deactivateLicense();
+    console.log("License removed.");
+  });
+
 program.parse();
 
 // ── watch mode ────────────────────────────────────────────────────────────
