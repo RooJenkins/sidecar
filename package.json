@@ -1,6 +1,6 @@
 {
   "name": "uplo-sidecar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Make your documents AI-ready. Scans folders, extracts structured data, generates .sidecar.md companion files. Privacy-first — nothing leaves your machine.",
   "type": "module",
   "bin": {

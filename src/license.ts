@@ -1,7 +1,7 @@
 import { readFile, writeFile, unlink, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { createVerify } from "node:crypto";
+import { verify } from "node:crypto";
 
 const LICENSE_DIR = join(homedir(), ".sidecar");
 const LICENSE_FILE = join(LICENSE_DIR, "license.key");
@@ -9,7 +9,7 @@ const LICENSE_FILE = join(LICENSE_DIR, "license.key");
 // Ed25519 public key for verifying license signatures.
 // The private key is kept server-side on uplo.ai.
 // This is a placeholder — replace with the real public key after generating the keypair.
-const PUBLIC_KEY = process.env.SIDECAR_LICENSE_PUBLIC_KEY || "NOT_SET";
+const PUBLIC_KEY = process.env.SIDECAR_LICENSE_PUBLIC_KEY || "MCowBQYDK2VwAyEAAr3tkNL2q4FM3z8dBbM9p3sho+z9x4su+5cIeMZkQ4A=";
 
 export interface LicensePayload {
   email: string;
@@ -45,18 +45,9 @@ function decodeLicense(
 
 /** Verify the Ed25519 signature on a license key */
 function verifySignature(json: string, signature: string): boolean {
-  if (PUBLIC_KEY === "NOT_SET") {
-    // During development, accept all keys
-    return true;
-  }
-
   try {
-    const verify = createVerify("Ed25519");
-    verify.update(json);
-    return verify.verify(
-      `-----BEGIN PUBLIC KEY-----\n${PUBLIC_KEY}\n-----END PUBLIC KEY-----`,
-      Buffer.from(signature, "base64")
-    );
+    const pem = `-----BEGIN PUBLIC KEY-----\n${PUBLIC_KEY}\n-----END PUBLIC KEY-----`;
+    return verify(null, Buffer.from(json), pem, Buffer.from(signature, "base64"));
   } catch {
     return false;
   }

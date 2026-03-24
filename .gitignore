@@ -5,6 +5,7 @@ SIDECAR.md
 .sidecar/
 .DS_Store
 .env
+KEYS.md
 
 # Desktop app
 desktop/src-tauri/target/
