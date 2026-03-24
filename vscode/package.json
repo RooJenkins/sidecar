@@ -1,0 +1,68 @@
+{
+  "name": "sidecar-vscode",
+  "displayName": "Sidecar",
+  "description": "Search your sidecar knowledge base from VS Code",
+  "version": "0.1.0",
+  "publisher": "uplo",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sidecar.search",
+        "title": "Sidecar: Search Documents"
+      },
+      {
+        "command": "sidecar.smartSearch",
+        "title": "Sidecar: Smart Search (AI)"
+      },
+      {
+        "command": "sidecar.scanWorkspace",
+        "title": "Sidecar: Scan Workspace"
+      },
+      {
+        "command": "sidecar.status",
+        "title": "Sidecar: Show Status"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "sidecar.search",
+        "key": "cmd+j",
+        "mac": "cmd+j",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "Sidecar",
+      "properties": {
+        "sidecar.cliPath": {
+          "type": "string",
+          "default": "sidecar",
+          "description": "Path to the sidecar CLI binary"
+        },
+        "sidecar.smartSearchModel": {
+          "type": "string",
+          "default": "haiku",
+          "description": "Model to use for smart search"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "watch": "npm run build -- --watch",
+    "package": "npx @vscode/vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.4.0"
+  }
+}
