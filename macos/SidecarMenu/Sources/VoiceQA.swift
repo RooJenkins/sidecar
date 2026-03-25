@@ -27,7 +27,10 @@ final class VoiceQA: ObservableObject {
     @Published var pendingInput: String = ""
     @Published var focusTrigger: Int = 0
 
-    var conversationHistory: [(question: String, answer: String)] = []
+    var conversationHistory: [(question: String, answer: String, sources: [SearchResult], attachments: [URL])] = []
+    @Published var referencedDocuments: [SearchResult] = []
+    @Published var attachedFiles: [URL] = []
+    private var questionQueue: [String] = []
 
     private var audioEngine: AVAudioEngine?
     private var audioSamples: [Float] = [] // 16kHz mono Float32 — what WhisperKit expects
@@ -78,9 +81,27 @@ final class VoiceQA: ObservableObject {
         finishRecording()
     }
 
+    /// Attachments captured at submit time, used by processQuestion
+    private var currentAttachments: [URL] = []
+
     func submitTextQuestion(_ text: String) {
         let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return }
+
+        // Queue if currently processing
+        switch state {
+        case .searching, .answering, .transcribing, .loading:
+            questionQueue.append(question)
+            Logger.log("Voice Q&A: queued question (\(questionQueue.count) in queue)", source: "VoiceQA")
+            return
+        default:
+            break
+        }
+
+        // Capture and clear attached files at submit time
+        currentAttachments = attachedFiles
+        attachedFiles = []
+
         partialTranscription = question
         processQuestion(question)
     }
@@ -315,6 +336,12 @@ final class VoiceQA: ObservableObject {
                 var seen = Set<String>()
                 results = results.filter { seen.insert($0.file).inserted }
 
+                // Accumulate referenced documents (deduplicated across conversation)
+                let existingFiles = Set(referencedDocuments.map(\.file))
+                for doc in results where !existingFiles.contains(doc.file) {
+                    referencedDocuments.append(doc)
+                }
+
                 let blocks = results.flatMap { $0.knowledgeBlocks ?? [] }
                 state = .done(answer: "", sources: results, knowledgeBlocks: blocks)
 
@@ -324,10 +351,21 @@ final class VoiceQA: ObservableObject {
                     let truncated = String(injectedContext.suffix(8000))
                     prompt += "## External Context\n\(truncated)\n\n"
                 }
+                // Include attached file contents
+                if !currentAttachments.isEmpty {
+                    prompt += "## Attached Files\n"
+                    for url in currentAttachments {
+                        if let content = SidecarCLI.readSidecarFile(sourcePath: url.path)
+                            ?? (try? String(contentsOf: url, encoding: .utf8)) {
+                            let truncated = String(content.prefix(4000))
+                            prompt += "### \(url.lastPathComponent)\n\(truncated)\n\n"
+                        }
+                    }
+                }
                 if !conversationHistory.isEmpty {
                     prompt += "## Previous Q&A\n"
-                    for (q, a) in conversationHistory.suffix(3) {
-                        prompt += "Q: \(q)\nA: \(a)\n\n"
+                    for entry in conversationHistory.suffix(3) {
+                        prompt += "Q: \(entry.question)\nA: \(entry.answer)\n\n"
                     }
                 }
                 prompt += "## Question\n\(question)"
@@ -342,8 +380,17 @@ final class VoiceQA: ObservableObject {
                     cliPath: settings.cliPath
                 )
 
-                conversationHistory.append((question: question, answer: answer))
+                conversationHistory.append((question: question, answer: answer, sources: results, attachments: currentAttachments))
+                currentAttachments = []
                 state = .done(answer: "", sources: results, knowledgeBlocks: blocks)
+
+                // Process queued questions
+                if !questionQueue.isEmpty {
+                    let next = questionQueue.removeFirst()
+                    Logger.log("Voice Q&A: processing queued question (\(questionQueue.count) remaining)", source: "VoiceQA")
+                    partialTranscription = next
+                    processQuestion(next)
+                }
             } catch {
                 state = .error("Failed: \(error.localizedDescription)")
             }
@@ -359,6 +406,9 @@ final class VoiceQA: ObservableObject {
         partialTranscription = ""
         bufferEnergy = []
         conversationHistory = []
+        referencedDocuments = []
+        attachedFiles = []
+        questionQueue = []
         injectedContext = ""
         pendingInput = ""
     }

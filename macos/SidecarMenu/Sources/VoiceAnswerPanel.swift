@@ -26,18 +26,15 @@ final class VoiceAnswerPanel {
 
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView, .nonactivatingPanel],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
         panel.minSize = NSSize(width: 400, height: 300)
         panel.title = "Sidecar Q&A"
 
-        panel.titlebarAppearsTransparent = false
         panel.isFloatingPanel = true
         panel.level = .floating
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
         panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = false
@@ -73,7 +70,7 @@ final class VoiceAnswerPanel {
     }
 }
 
-// MARK: - SwiftUI View
+// MARK: - SwiftUI View (Unified layout: chat + input always visible)
 
 struct VoiceAnswerView: View {
     @ObservedObject var voiceQA: VoiceQA
@@ -84,187 +81,59 @@ struct VoiceAnswerView: View {
     @State private var showingContextPreview = false
     @FocusState private var textFieldFocused: Bool
 
+    private var isRecording: Bool {
+        if case .listening = voiceQA.state { return true }
+        return false
+    }
+
+    private var isBusy: Bool {
+        switch voiceQA.state {
+        case .loading, .transcribing, .searching, .answering: return true
+        default: return false
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            switch voiceQA.state {
-            case .idle:
-                EmptyView()
-            case .loading:
-                statusView(icon: "arrow.down.circle", text: "Loading model...")
-            case .listening:
-                listeningView
-            case .transcribing:
-                statusView(icon: "waveform", text: "Transcribing...")
-            case .searching:
-                progressView(icon: "magnifyingglass", status: "Searching documents...")
-            case .answering:
-                progressView(icon: "brain", status: "Generating answer...")
-            case .done(let answer, let sources, let knowledgeBlocks):
-                answerView(answer: answer, sources: sources, knowledgeBlocks: knowledgeBlocks)
-            case .error(let message):
-                errorView(message: message)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .background(.ultraThickMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    // MARK: - Listening
-
-    private var listeningView: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "mic.fill")
-                .foregroundStyle(.red)
-                .font(.title2)
-                .symbolEffect(.pulse)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Listening... release to search")
-                    .font(.headline)
-            }
-
-            Spacer()
-
-            HStack(spacing: 1) {
-                ForEach(Array(voiceQA.bufferEnergy.suffix(20).enumerated()), id: \.offset) { _, energy in
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(energy > 0.3 ? Color.red : Color.secondary.opacity(0.3))
-                        .frame(width: 2, height: CGFloat(max(4, energy * 30)))
-                }
-            }
-            .frame(height: 30)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-    }
-
-    // MARK: - Status
-
-    private func statusView(icon: String, text: String) -> some View {
-        HStack(spacing: 12) {
-            ProgressView()
-                .controlSize(.small)
-            Image(systemName: icon)
-                .foregroundStyle(.secondary)
-            Text(text)
-                .font(.headline)
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 16)
-    }
-
-    private func progressView(icon: String, status: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header with dismiss
-            HStack {
-                Text("Sidecar Q&A")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-
-            // Show the transcribed question
-            if !voiceQA.partialTranscription.isEmpty {
-                questionBubble(voiceQA.partialTranscription)
-            }
-
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Image(systemName: icon)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-                Text(status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-    }
-
-    // MARK: - Answer
-
-    private func answerView(answer: String, sources: [SearchResult], knowledgeBlocks: [String]) -> some View {
-        VStack(spacing: 0) {
-            // Header bar
-            HStack {
-                Text("Sidecar Q&A")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 4)
-
-            Divider()
-
-            // Chat history
+            // Chat area — always visible
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        // Previous Q&A pairs
-                        ForEach(Array(voiceQA.conversationHistory.enumerated()), id: \.offset) { i, pair in
-                            questionBubble(pair.question)
-                            answerBubble(pair.answer)
+                        // Conversation history with attachments + inline docs
+                        ForEach(Array(voiceQA.conversationHistory.enumerated()), id: \.offset) { _, entry in
+                            // Attachments shown above the question
+                            if !entry.attachments.isEmpty {
+                                attachmentChips(entry.attachments)
+                            }
+                            questionBubble(entry.question)
+                            answerBubble(entry.answer)
+                            if !entry.sources.isEmpty {
+                                docStrip(entry.sources)
+                            }
                         }
 
-                        // Current question
+                        // Current question (if not yet in history)
                         if !voiceQA.partialTranscription.isEmpty {
-                            let isOldQuestion = voiceQA.conversationHistory.last?.question == voiceQA.partialTranscription
-                            if !isOldQuestion {
+                            let isOld = voiceQA.conversationHistory.last?.question == voiceQA.partialTranscription
+                            if !isOld {
                                 questionBubble(voiceQA.partialTranscription)
                             }
                         }
 
-                        // Current answer / loading
-                        if !knowledgeBlocks.isEmpty && answer.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                ForEach(Array(knowledgeBlocks.prefix(3).enumerated()), id: \.offset) { _, block in
-                                    HStack(alignment: .top, spacing: 6) {
-                                        Image(systemName: "lightbulb.fill").foregroundStyle(.yellow).font(.caption2)
-                                        Text(block).font(.callout)
-                                    }
-                                }
-                                HStack(spacing: 6) {
-                                    ProgressView().controlSize(.small)
-                                    Text("Generating answer...").font(.caption).foregroundStyle(.secondary)
-                                }
+                        // Inline status indicators
+                        if isBusy {
+                            statusIndicator
+                        }
+
+                        // Error
+                        if case .error(let msg) = voiceQA.state {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+                                Text(msg).font(.callout)
                             }
                             .padding(10)
                             .background(Color.secondary.opacity(0.08))
                             .clipShape(RoundedRectangle(cornerRadius: 10))
-                        }
-
-                        if !answer.isEmpty {
-                            answerBubble(answer)
-                        }
-
-                        // Interactive file cards
-                        if !sources.isEmpty {
-                            let showCount = answer.isEmpty ? visibleSourceCount : sources.count
-                            ForEach(Array(sources.prefix(showCount).enumerated()), id: \.element.file) { i, source in
-                                FileCard(source: source)
-                                    .transition(.asymmetric(
-                                        insertion: .move(edge: .bottom).combined(with: .opacity),
-                                        removal: .opacity
-                                    ))
-                            }
                         }
 
                         Color.clear.frame(height: 1).id("bottom")
@@ -274,26 +143,8 @@ struct VoiceAnswerView: View {
                 .onChange(of: voiceQA.conversationHistory.count) { _, _ in
                     withAnimation { proxy.scrollTo("bottom") }
                 }
-                .onChange(of: answer) { _, _ in
-                    visibleSourceCount = sources.count
+                .onChange(of: voiceQA.state) { _, _ in
                     withAnimation { proxy.scrollTo("bottom") }
-                }
-                .onChange(of: sources.count) { _, newCount in
-                    // Stagger source cards appearing one by one
-                    if newCount > 0 && answer.isEmpty {
-                        visibleSourceCount = 0
-                        sourceRevealTimer?.invalidate()
-                        var count = 0
-                        sourceRevealTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { timer in
-                            count += 1
-                            DispatchQueue.main.async {
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    visibleSourceCount = count
-                                }
-                                if count >= newCount { timer.invalidate() }
-                            }
-                        }
-                    }
                 }
             }
 
@@ -311,22 +162,73 @@ struct VoiceAnswerView: View {
                 .background(Color.secondary.opacity(0.04))
             }
 
+            // Recording indicator
+            if isRecording {
+                Divider()
+                HStack(spacing: 8) {
+                    Image(systemName: "mic.fill")
+                        .foregroundStyle(.red)
+                        .symbolEffect(.pulse)
+                    Text("Listening...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    HStack(spacing: 1) {
+                        ForEach(Array(voiceQA.bufferEnergy.suffix(20).enumerated()), id: \.offset) { _, energy in
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(energy > 0.3 ? Color.red : Color.secondary.opacity(0.3))
+                                .frame(width: 2, height: CGFloat(max(4, energy * 30)))
+                        }
+                    }
+                    .frame(height: 24)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
+
             Divider()
 
-            // Input bar
+            // Attached files
+            if !voiceQA.attachedFiles.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(voiceQA.attachedFiles, id: \.path) { url in
+                            HStack(spacing: 4) {
+                                Image(systemName: "paperclip")
+                                    .font(.system(size: 9))
+                                Text(url.lastPathComponent)
+                                    .font(.caption2)
+                                    .lineLimit(1)
+                                Button(action: {
+                                    voiceQA.attachedFiles.removeAll { $0 == url }
+                                }) {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 7, weight: .bold))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.orange.opacity(0.1))
+                            .clipShape(Capsule())
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                }
+            }
+
+            // Input bar — ALWAYS visible
             HStack(spacing: 8) {
                 if !voiceQA.injectedContext.isEmpty {
                     HStack(spacing: 3) {
-                        Image(systemName: "doc.text.fill")
-                            .font(.system(size: 9))
-                        Text("Context")
-                            .font(.caption2)
+                        Image(systemName: "doc.text.fill").font(.system(size: 9))
+                        Text("Context").font(.caption2)
                         Button(action: {
                             voiceQA.injectedContext = ""
                             showingContextPreview = false
                         }) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 7, weight: .bold))
+                            Image(systemName: "xmark").font(.system(size: 7, weight: .bold))
                         }
                         .buttonStyle(.plain)
                     }
@@ -338,20 +240,20 @@ struct VoiceAnswerView: View {
                     .onTapGesture { showingContextPreview.toggle() }
                 }
 
-                Label("Hold ⌘J", systemImage: "mic")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 65)
+                // Mic button — click to toggle recording
+                Button(action: toggleRecording) {
+                    Image(systemName: isRecording ? "mic.fill" : "mic")
+                        .foregroundStyle(isRecording ? .red : .secondary)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Click to record voice")
 
-                TextField("Type a follow-up...", text: $followUpText)
+                TextField("Ask a question...", text: $followUpText)
                     .textFieldStyle(.roundedBorder)
                     .font(.callout)
                     .focused($textFieldFocused)
-                    .onSubmit {
-                        guard !followUpText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                        voiceQA.submitTextQuestion(followUpText)
-                        followUpText = ""
-                    }
+                    .onSubmit { submitText() }
                     .onAppear {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                             textFieldFocused = true
@@ -369,16 +271,130 @@ struct VoiceAnswerView: View {
                         }
                     }
 
-                Button("Send") {
-                    voiceQA.submitTextQuestion(followUpText)
-                    followUpText = ""
+                // Attach file button
+                Button(action: attachFile) {
+                    Image(systemName: "paperclip")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(followUpText.trimmingCharacters(in: .whitespaces).isEmpty)
+                .help("Attach a file")
+
+                Button("Send") { submitText() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(followUpText.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            for provider in providers {
+                provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { data, _ in
+                    guard let data = data as? Data,
+                          let urlString = String(data: data, encoding: .utf8),
+                          let url = URL(string: urlString) else { return }
+                    DispatchQueue.main.async {
+                        if !voiceQA.attachedFiles.contains(url) {
+                            voiceQA.attachedFiles.append(url)
+                        }
+                    }
+                }
+            }
+            return true
+        }
+    }
+
+    // MARK: - Actions
+
+    private func submitText() {
+        let text = followUpText.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        voiceQA.submitTextQuestion(text)
+        followUpText = ""
+    }
+
+    private func attachFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.begin { response in
+            guard response == .OK else { return }
+            DispatchQueue.main.async {
+                for url in panel.urls where !voiceQA.attachedFiles.contains(url) {
+                    voiceQA.attachedFiles.append(url)
+                }
+            }
+        }
+    }
+
+    private func toggleRecording() {
+        if isRecording {
+            voiceQA.stopRecording()
+        } else {
+            voiceQA.startRecording()
+        }
+    }
+
+    // MARK: - Inline Status
+
+    private var statusIndicator: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Group {
+                switch voiceQA.state {
+                case .loading: Text("Loading model...")
+                case .transcribing: Text("Transcribing...")
+                case .searching: Text("Searching documents...")
+                case .answering: Text("Generating answer...")
+                default: Text("")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    // MARK: - Attachment Chips (shown in chat timeline)
+
+    private func attachmentChips(_ urls: [URL]) -> some View {
+        HStack {
+            Spacer()
+            HStack(spacing: 4) {
+                ForEach(urls, id: \.path) { url in
+                    HStack(spacing: 3) {
+                        Image(systemName: "paperclip")
+                            .font(.system(size: 8))
+                        Text(url.lastPathComponent)
+                            .font(.caption2)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.orange.opacity(0.15))
+                    .clipShape(Capsule())
+                    .onTapGesture {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Inline Doc Strip
+
+    private func docStrip(_ sources: [SearchResult]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(sources, id: \.file) { doc in
+                    DocumentTile(source: doc)
+                }
+            }
         }
     }
 
@@ -387,21 +403,15 @@ struct VoiceAnswerView: View {
     private func questionBubble(_ text: String) -> some View {
         HStack {
             Spacer()
-            HStack(alignment: .top, spacing: 6) {
-                Text(text)
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true) // Show full text, never truncate
-                Image(systemName: "mic.fill")
-                    .foregroundStyle(.white.opacity(0.7))
-                    .font(.caption2)
-                    .padding(.top, 3)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.accentColor)
-            .foregroundStyle(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .frame(maxWidth: 350, alignment: .trailing)
+            Text(text)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.accentColor)
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .frame(maxWidth: 350, alignment: .trailing)
         }
     }
 
@@ -418,28 +428,11 @@ struct VoiceAnswerView: View {
     }
 
     private func markdownToAttributed(_ text: String) -> AttributedString {
-        // Convert block-level markdown (headers, bullets) to inline-friendly format
         let cleaned = text
             .replacingOccurrences(of: #"(?m)^#{1,4}\s+(.+)$"#, with: "**$1**", options: .regularExpression)
             .replacingOccurrences(of: #"(?m)^[-*]\s+"#, with: "• ", options: .regularExpression)
             .replacingOccurrences(of: #"(?m)^\d+\.\s+"#, with: "", options: .regularExpression)
         return (try? AttributedString(markdown: cleaned, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
-    }
-
-    // MARK: - Error
-
-    private func errorView(message: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.yellow)
-            Text(message).font(.body)
-            Spacer()
-            Button("Dismiss", action: onDismiss)
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 16)
     }
 }
 
@@ -604,5 +597,138 @@ struct FileCard: View {
 
     private func abbreviatePath(_ path: String) -> String {
         path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+    }
+}
+
+// MARK: - Document Tile (compact card for inline doc strips)
+
+struct DocumentTile: View {
+    let source: SearchResult
+    @State private var isHovering = false
+
+    private var fileURL: URL { URL(fileURLWithPath: source.file) }
+    private var fileName: String {
+        let name = fileURL.deletingPathExtension().lastPathComponent
+        return source.title.isEmpty ? name : source.title
+    }
+    private var fileExt: String { fileURL.pathExtension.lowercased() }
+
+    private var typeLabel: String {
+        switch fileExt {
+        case "pdf": return "PDF"
+        case "docx", "doc": return "Word"
+        case "xlsx", "xls": return "Excel"
+        case "csv": return "CSV"
+        case "pptx", "ppt": return "PPT"
+        case "md": return "Markdown"
+        case "txt": return "Text"
+        case "eml", "msg": return "Email"
+        case "rtf": return "RTF"
+        case "png", "jpg", "jpeg", "gif", "webp": return "Image"
+        case "mp4", "mov": return "Video"
+        case "mp3", "wav", "m4a": return "Audio"
+        default: return fileExt.uppercased()
+        }
+    }
+
+    private var typeColor: Color {
+        switch fileExt {
+        case "pdf": return .red
+        case "docx", "doc": return .blue
+        case "xlsx", "xls", "csv": return .green
+        case "pptx", "ppt": return .orange
+        case "eml", "msg": return .purple
+        case "png", "jpg", "jpeg", "gif", "webp": return .teal
+        default: return .secondary
+        }
+    }
+
+    private var icon: String {
+        switch fileExt {
+        case "pdf": return "doc.richtext.fill"
+        case "docx", "doc": return "doc.text.fill"
+        case "xlsx", "xls", "csv": return "tablecells.fill"
+        case "pptx", "ppt": return "rectangle.fill.on.rectangle.fill"
+        case "md", "txt": return "doc.plaintext.fill"
+        case "eml", "msg": return "envelope.fill"
+        case "png", "jpg", "jpeg", "gif", "webp": return "photo.fill"
+        case "mp4", "mov": return "film.fill"
+        default: return "doc.fill"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 3) {
+            // Icon + type tag
+            ZStack(alignment: .bottomTrailing) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(typeColor)
+                    .frame(width: 32, height: 28)
+
+                Text(typeLabel)
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, 1)
+                    .background(typeColor.opacity(0.8))
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                    .offset(x: 4, y: 2)
+            }
+
+            // File name
+            Text(fileName)
+                .font(.system(size: 9))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.primary)
+                .frame(width: 80)
+
+            // Action buttons (visible on hover)
+            if isHovering {
+                HStack(spacing: 4) {
+                    Button(action: openFile) {
+                        Image(systemName: "arrow.up.forward.square").font(.system(size: 9))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .help("Open in app")
+
+                    Button(action: revealInFinder) {
+                        Image(systemName: "folder").font(.system(size: 9))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .help("Show in Finder")
+                }
+                .transition(.opacity)
+            }
+        }
+        .frame(width: 96)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isHovering ? Color.secondary.opacity(0.12) : Color.secondary.opacity(0.05))
+        )
+        .onHover { hovering in withAnimation(.easeInOut(duration: 0.15)) { isHovering = hovering } }
+        .onTapGesture { quickLook() }
+        .onDrag { NSItemProvider(object: fileURL as NSURL) }
+        .help(source.file.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+    }
+
+    /// Click tile → Quick Look preview (selects in Finder, press Space)
+    private func quickLook() {
+        NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+    }
+
+    /// Arrow button → Open with default app
+    private func openFile() {
+        NSWorkspace.shared.open(fileURL)
+    }
+
+    /// Folder button → Reveal in Finder
+    private func revealInFinder() {
+        NSWorkspace.shared.selectFile(source.file, inFileViewerRootedAtPath: "")
     }
 }
