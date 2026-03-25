@@ -21,7 +21,7 @@ enum ContextFormatter {
 
             // For high-relevance results, include the full sidecar content
             // instead of just the snippet — much richer context for the AI
-            if result.score >= 0.5, let content = loadSidecarContent(for: result.file) {
+            if result.score >= 0.3, let content = loadSidecarContent(for: result.file) {
                 lines.append("    <content>\(escapeXML(content))</content>")
             } else if !result.snippet.isEmpty {
                 lines.append("    <snippet>\(escapeXML(result.snippet))</snippet>")

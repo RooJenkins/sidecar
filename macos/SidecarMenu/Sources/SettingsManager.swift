@@ -70,6 +70,43 @@ final class SettingsManager {
         didSet { UserDefaults.standard.set(autoWatch, forKey: "autoWatch") }
     }
 
+    var whisperModel: String {
+        didSet { UserDefaults.standard.set(whisperModel, forKey: "whisperModel") }
+    }
+
+    var preventSleepDuringScan: Bool {
+        didSet { UserDefaults.standard.set(preventSleepDuringScan, forKey: "preventSleepDuringScan") }
+    }
+
+    // MARK: - Voice Q&A Settings
+
+    var voiceHotkeyKeyCode: UInt16 {
+        didSet { UserDefaults.standard.set(Int(voiceHotkeyKeyCode), forKey: "voiceHotkeyKeyCode") }
+    }
+
+    var voiceHotkeyModifiers: UInt {
+        didSet { UserDefaults.standard.set(voiceHotkeyModifiers, forKey: "voiceHotkeyModifiers") }
+    }
+
+    var voiceWhisperModel: String {
+        didSet { UserDefaults.standard.set(voiceWhisperModel, forKey: "voiceWhisperModel") }
+    }
+
+    var voiceModifierFlags: NSEvent.ModifierFlags {
+        NSEvent.ModifierFlags(rawValue: voiceHotkeyModifiers)
+    }
+
+    var voiceHotkeyDescription: String {
+        var parts: [String] = []
+        let flags = voiceModifierFlags
+        if flags.contains(.control) { parts.append("⌃") }
+        if flags.contains(.option) { parts.append("⌥") }
+        if flags.contains(.shift) { parts.append("⇧") }
+        if flags.contains(.command) { parts.append("⌘") }
+        parts.append(keyCodeToString(voiceHotkeyKeyCode))
+        return parts.joined()
+    }
+
     var modifierFlags: NSEvent.ModifierFlags {
         NSEvent.ModifierFlags(rawValue: hotkeyModifiers)
     }
@@ -80,22 +117,33 @@ final class SettingsManager {
         defaults.register(defaults: [
             "enabled": true,
             "cliPath": "",  // Empty = auto-detect via resolveCLIPath
-            "maxResults": 5,
+            "maxResults": 10,
             "indexedFolders": [String](),
             "autoWatch": true,
             "hotkeyType": HotkeyType.keyCombo.rawValue,
             "hotkeyKeyCode": Int(kVK_ANSI_J),  // Default: Cmd+J
             "hotkeyModifiers": Int(NSEvent.ModifierFlags.command.rawValue),
+            "whisperModel": "openai_whisper-large-v3_turbo",
+            "preventSleepDuringScan": true,
+            "voiceHotkeyKeyCode": Int(kVK_ANSI_J),
+            "voiceHotkeyModifiers": Int(NSEvent.ModifierFlags([.command, .shift]).rawValue),
+            "voiceWhisperModel": "openai_whisper-large-v3_turbo",
         ])
 
         self.enabled = defaults.bool(forKey: "enabled")
         self.cliPath = defaults.string(forKey: "cliPath") ?? "/usr/local/bin/sidecar"
-        self.maxResults = defaults.integer(forKey: "maxResults")
+        let storedMax = defaults.integer(forKey: "maxResults")
+        self.maxResults = storedMax < 10 ? 10 : storedMax
         self.indexedFolders = defaults.stringArray(forKey: "indexedFolders") ?? []
         self.hotkeyType = HotkeyType(rawValue: defaults.string(forKey: "hotkeyType") ?? "") ?? .keyCombo
         self.hotkeyKeyCode = UInt16(defaults.integer(forKey: "hotkeyKeyCode"))
         self.hotkeyModifiers = UInt(defaults.integer(forKey: "hotkeyModifiers"))
         self.autoWatch = defaults.bool(forKey: "autoWatch")
+        self.whisperModel = defaults.string(forKey: "whisperModel") ?? "openai_whisper-large-v3_turbo"
+        self.preventSleepDuringScan = defaults.bool(forKey: "preventSleepDuringScan")
+        self.voiceHotkeyKeyCode = UInt16(defaults.integer(forKey: "voiceHotkeyKeyCode"))
+        self.voiceHotkeyModifiers = UInt(defaults.integer(forKey: "voiceHotkeyModifiers"))
+        self.voiceWhisperModel = defaults.string(forKey: "voiceWhisperModel") ?? "openai_whisper-base"
         // Sync launch-at-login state with actual system state
         self.launchAtLogin = SMAppService.mainApp.status == .enabled
     }

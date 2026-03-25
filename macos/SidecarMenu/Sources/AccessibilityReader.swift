@@ -4,16 +4,22 @@ import AppKit
 /// This avoids keyboard simulation (Escape/Tab) which doesn't work reliably across apps.
 enum AccessibilityReader {
 
-    /// Recursively extract all visible text from the focused app's window.
-    /// Returns the concatenated text content, which typically includes conversation history.
-    static func readWindowText() -> String? {
+    /// Recursively extract all visible text from a specific app's window.
+    /// If no PID is given, uses the frontmost app (skipping our own process).
+    static func readWindowText(fromPID pid: pid_t? = nil) -> String? {
         guard AXIsProcessTrusted() else {
             Logger.log("AX not trusted", source: "AXReader")
             return nil
         }
 
-        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
-        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+        let targetPID: pid_t
+        if let pid = pid {
+            targetPID = pid
+        } else {
+            guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+            targetPID = app.processIdentifier
+        }
+        let axApp = AXUIElementCreateApplication(targetPID)
 
         // Get the focused window
         var windowValue: AnyObject?
@@ -25,12 +31,35 @@ enum AccessibilityReader {
 
         // Recursively collect text from all children
         var texts: [String] = []
-        collectText(from: window as! AXUIElement, into: &texts, depth: 0, maxDepth: 15)
+        collectText(from: window as! AXUIElement, into: &texts, depth: 0, maxDepth: 30)
 
         let combined = texts.joined(separator: "\n")
         Logger.log("AX read \(combined.count) chars from \(texts.count) elements", source: "AXReader")
 
         return combined.isEmpty ? nil : combined
+    }
+
+    /// Read the text from the currently focused UI element (e.g. a text input field).
+    static func readFocusedElementText(fromPID pid: pid_t) -> String? {
+        guard AXIsProcessTrusted() else { return nil }
+
+        let axApp = AXUIElementCreateApplication(pid)
+
+        var focusedElement: AnyObject?
+        guard AXUIElementCopyAttributeValue(axApp, kAXFocusedUIElementAttribute as CFString, &focusedElement) == .success else {
+            Logger.log("Could not get focused element", source: "AXReader")
+            return nil
+        }
+
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(focusedElement as! AXUIElement, kAXValueAttribute as CFString, &value) == .success,
+              let text = value as? String,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+
+        Logger.log("Focused element text: \(text.count) chars", source: "AXReader")
+        return text
     }
 
     private static func collectText(from element: AXUIElement, into texts: inout [String], depth: Int, maxDepth: Int) {

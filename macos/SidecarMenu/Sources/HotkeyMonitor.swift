@@ -2,57 +2,77 @@ import AppKit
 import Carbon.HIToolbox
 
 final class HotkeyMonitor {
-    private let action: () -> Void
-    private let settings: SettingsManager
-    private var flagsMonitor: Any?
-    private var lastOptionTap: Date?
-    private let doubleTapThreshold: TimeInterval = 0.3
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
-
-    static var current: HotkeyMonitor?
-
-    init(settings: SettingsManager, action: @escaping () -> Void) {
-        self.settings = settings
-        self.action = action
+    enum Mode {
+        case tap        // Fire action on keyDown only
+        case hold       // Fire action on keyDown, onRelease on keyUp
+        case tapOrHold  // Short press = onTap, long press = action + onRelease
     }
 
-    private static func log(_ msg: String) {
+    private let mode: Mode
+    private let action: () -> Void
+    private let onRelease: (() -> Void)?
+    private let settings: SettingsManager
+    private var usesSharedTap = false
+
+    private let customKeyCode: UInt16?
+    private let customModifiers: NSEvent.ModifierFlags?
+
+    var onTap: (() -> Void)?
+    var holdThreshold: TimeInterval
+    var holdTimer: Timer?
+    var isHolding = false
+    var tapOrHoldActive = false  // True when we consumed a keyDown and are waiting for keyUp
+
+    private static var activeMonitors: [HotkeyMonitor] = []
+    private static var sharedEventTap: CFMachPort?
+    private static var sharedRunLoopSource: CFRunLoopSource?
+
+    init(settings: SettingsManager, keyCode: UInt16? = nil, modifiers: NSEvent.ModifierFlags? = nil, mode: Mode = .tap, action: @escaping () -> Void, onRelease: (() -> Void)? = nil, onTap: (() -> Void)? = nil, holdThreshold: TimeInterval = 0.3) {
+        self.settings = settings
+        self.customKeyCode = keyCode
+        self.customModifiers = modifiers
+        self.mode = mode
+        self.action = action
+        self.onRelease = onRelease
+        self.onTap = onTap
+        self.holdThreshold = holdThreshold
+    }
+
+    static func log(_ msg: String) {
         Logger.log(msg, source: "Hotkey")
     }
 
-    func fire() {
-        HotkeyMonitor.log("fire() called!")
-        action()
-    }
+    func fire() { action() }
+
+    var effectiveKeyCode: UInt16 { customKeyCode ?? settings.hotkeyKeyCode }
+    var effectiveModifiers: NSEvent.ModifierFlags { customModifiers ?? settings.modifierFlags }
 
     func start() {
         stop()
-        HotkeyMonitor.current = self
-
-        if settings.hotkeyType == .doubleTapOption {
-            flagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-                self?.handleFlagsChanged(event)
-            }
-            HotkeyMonitor.log("Started double-tap Option monitor")
-        } else {
-            startCGEventTap()
-        }
+        usesSharedTap = true
+        HotkeyMonitor.activeMonitors.append(self)
+        HotkeyMonitor.ensureSharedTap()
+        HotkeyMonitor.log("Registered hotkey: keyCode=\(effectiveKeyCode) mode=\(mode)")
     }
 
     func stop() {
-        if let flagsMonitor {
-            NSEvent.removeMonitor(flagsMonitor)
-            self.flagsMonitor = nil
+        holdTimer?.invalidate()
+        holdTimer = nil
+        if usesSharedTap {
+            HotkeyMonitor.activeMonitors.removeAll { $0 === self }
+            usesSharedTap = false
+            if HotkeyMonitor.activeMonitors.isEmpty {
+                HotkeyMonitor.tearDownSharedTap()
+            }
         }
-        stopCGEventTap()
-        HotkeyMonitor.current = nil
     }
 
-    // MARK: - CGEvent Tap (most reliable approach)
+    // MARK: - Shared CGEvent Tap
 
-    private func startCGEventTap() {
-        let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
+    static func ensureSharedTap() {
+        guard sharedEventTap == nil else { return }
+
+        let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -60,94 +80,117 @@ final class HotkeyMonitor {
             options: .defaultTap,
             eventsOfInterest: mask,
             callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
-                guard let monitor = HotkeyMonitor.current else {
+                guard !HotkeyMonitor.activeMonitors.isEmpty else {
                     return Unmanaged.passRetained(event)
                 }
 
                 if type.rawValue == CGEventType.RawValue(UInt32.max) {
-                    HotkeyMonitor.log("Event tap was disabled, re-enabling")
-                    if let tap = monitor.eventTap {
+                    if let tap = HotkeyMonitor.sharedEventTap {
                         CGEvent.tapEnable(tap: tap, enable: true)
                     }
                     return Unmanaged.passRetained(event)
                 }
 
+                // Pass through flagsChanged events
+                if type == .flagsChanged {
+                    return Unmanaged.passRetained(event)
+                }
+
                 let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
                 let flags = event.flags
+                let isKeyUp = type == .keyUp
+                let isRepeat = !isKeyUp && event.getIntegerValueField(.keyboardEventAutorepeat) != 0
 
-                let requiredKey = monitor.settings.hotkeyKeyCode
-                let requiredMods = monitor.settings.modifierFlags
-
-                // Check modifiers
                 let hasCmd = flags.contains(.maskCommand)
                 let hasShift = flags.contains(.maskShift)
                 let hasCtrl = flags.contains(.maskControl)
                 let hasOpt = flags.contains(.maskAlternate)
 
-                let needCmd = requiredMods.contains(.command)
-                let needShift = requiredMods.contains(.shift)
-                let needCtrl = requiredMods.contains(.control)
-                let needOpt = requiredMods.contains(.option)
+                for monitor in HotkeyMonitor.activeMonitors {
+                    let requiredKey = monitor.effectiveKeyCode
+                    let requiredMods = monitor.effectiveModifiers
 
-                if keyCode == requiredKey &&
-                   hasCmd == needCmd && hasShift == needShift &&
-                   hasCtrl == needCtrl && hasOpt == needOpt {
-                    HotkeyMonitor.log("Hotkey matched! keyCode=\(keyCode)")
-                    DispatchQueue.main.async {
-                        monitor.fire()
+                    let needCmd = requiredMods.contains(.command)
+                    let needShift = requiredMods.contains(.shift)
+                    let needCtrl = requiredMods.contains(.control)
+                    let needOpt = requiredMods.contains(.option)
+
+                    let modsMatch = isKeyUp || (hasCmd == needCmd && hasShift == needShift &&
+                                                hasCtrl == needCtrl && hasOpt == needOpt)
+
+                    if keyCode == requiredKey && modsMatch {
+                        if isKeyUp {
+                            if monitor.mode == .hold, let release = monitor.onRelease {
+                                HotkeyMonitor.log("Hold released: keyCode=\(keyCode)")
+                                DispatchQueue.main.async { release() }
+                                return nil
+                            }
+                            if monitor.mode == .tapOrHold && monitor.tapOrHoldActive {
+                                monitor.tapOrHoldActive = false
+                                DispatchQueue.main.async {
+                                    monitor.holdTimer?.invalidate()
+                                    monitor.holdTimer = nil
+                                    if monitor.isHolding {
+                                        monitor.isHolding = false
+                                        HotkeyMonitor.log("TapOrHold: hold end keyCode=\(keyCode)")
+                                        monitor.onRelease?()
+                                    } else {
+                                        HotkeyMonitor.log("TapOrHold: tap keyCode=\(keyCode)")
+                                        monitor.onTap?()
+                                    }
+                                }
+                                return nil
+                            }
+                        } else if isRepeat {
+                            if monitor.mode == .hold || monitor.mode == .tapOrHold { return nil }
+                        } else {
+                            if monitor.mode == .tapOrHold {
+                                monitor.tapOrHoldActive = true
+                                DispatchQueue.main.async {
+                                    monitor.holdTimer?.invalidate()
+                                    monitor.isHolding = false
+                                    monitor.holdTimer = Timer.scheduledTimer(withTimeInterval: monitor.holdThreshold, repeats: false) { _ in
+                                        monitor.isHolding = true
+                                        HotkeyMonitor.log("TapOrHold: hold start keyCode=\(keyCode)")
+                                        monitor.fire()
+                                    }
+                                }
+                                return nil
+                            }
+                            HotkeyMonitor.log("Hotkey down: keyCode=\(keyCode)")
+                            DispatchQueue.main.async { monitor.fire() }
+                            return nil
+                        }
                     }
-                    // Consume the event so it doesn't reach the active app
-                    return nil
                 }
 
                 return Unmanaged.passRetained(event)
             },
             userInfo: nil
         ) else {
-            HotkeyMonitor.log("ERROR: Failed to create CGEvent tap")
+            log("ERROR: Failed to create shared CGEvent tap")
             return
         }
 
-        self.eventTap = tap
+        sharedEventTap = tap
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        self.runLoopSource = source
+        sharedRunLoopSource = source
         CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-
-        HotkeyMonitor.log("CGEvent tap created successfully for keyCode=\(settings.hotkeyKeyCode), hotkey=\(settings.hotkeyDescription)")
+        log("Shared CGEvent tap created")
     }
 
-    private func stopCGEventTap() {
-        if let source = runLoopSource {
+    private static func tearDownSharedTap() {
+        if let source = sharedRunLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
-            runLoopSource = nil
+            sharedRunLoopSource = nil
         }
-        if let tap = eventTap {
+        if let tap = sharedEventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
-            eventTap = nil
+            sharedEventTap = nil
         }
     }
 
-    // MARK: - Double-tap Option
-
-    private func handleFlagsChanged(_ event: NSEvent) {
-        let optionPressed = event.modifierFlags.contains(.option)
-        guard !optionPressed else { return }
-
-        let rawFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard rawFlags.isEmpty else { return }
-
-        let now = Date()
-
-        if let last = lastOptionTap, now.timeIntervalSince(last) < doubleTapThreshold {
-            lastOptionTap = nil
-            action()
-        } else {
-            lastOptionTap = now
-        }
-    }
-
-    deinit {
-        stop()
-    }
+    deinit { stop() }
 }
+
